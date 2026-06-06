@@ -1,0 +1,12 @@
+{
+  "vault_path": "/home/claudedev/Documents/TheBrainOfChris",
+  "port": 3456,
+  "auth_token": "<random secret — generate with: openssl rand -hex 32>",
+  "database_url": "postgresql:///engram?host=/var/run/postgresql",
+  "test_database_url": "postgresql:///engram_test?host=/var/run/postgresql",
+  "default_time_budget_minutes": 15,
+  "cost_estimates_minutes": { "fact": 0.5, "explanation": 4, "project": 8 },
+  "project_first_interval_days": 21,
+  "child_retirement_streak": 2,
+  "fsrs": { "request_retention": 0.9 }
+}
