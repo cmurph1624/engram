@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc && cp -r src/migrations dist/migrations",
+    "build": "tsc && node -e \"require('fs').cpSync('src/migrations','dist/migrations',{recursive:true})\"",
     "start": "node dist/server.js",
     "test": "node --test --test-concurrency=1 --import tsx ./src/test/*.test.ts",
     "test:unit": "node --test --import tsx ./src/test/fsrs.test.ts ./src/test/scheduler.test.ts ./src/test/notes.test.ts"

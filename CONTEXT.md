@@ -84,7 +84,7 @@ System paths: pm2 process `engram`; DB `engram` (PostgreSQL 17, localhost socket
 | `vault_path` | Obsidian vault root on the server. |
 | `port` | HTTP port (3456). |
 | `auth_token` | Bearer token required on `/mcp` (generate: `openssl rand -hex 32`). |
-| `database_url` | `postgresql:///engram?host=/var/run/postgresql` — peer auth, no password. |
+| `database_url` | Host-specific. POSIX: `postgresql:///engram?host=/var/run/postgresql` — Unix socket, peer auth, no password. Windows: `postgresql://<user>:<password>@127.0.0.1:5432/engram` — no Unix socket exists there, so TCP with a real password is required. |
 | `test_database_url` | Same for the `engram_test` DB used by integration tests. |
 | `default_time_budget_minutes` | Default review time box (15). |
 | `cost_estimates_minutes` | Per-type review cost estimates for queue fill. |

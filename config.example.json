@@ -1,5 +1,6 @@
 {
-  "vault_path": "/home/claudedev/Documents/TheBrainOfChris",
+  "_comment_paths": "Absolute paths and connection strings are host-specific. POSIX: vault_path '/home/<user>/Documents/TheBrainOfChris', database_url 'postgresql:///engram?host=/var/run/postgresql' (Unix socket, peer auth, no password). Windows: vault_path 'C:\\Users\\<user>\\Documents\\TheBrainOfChris', database_url 'postgresql://<user>:<password>@127.0.0.1:5432/engram' — Windows Postgres has no Unix socket, so TCP with a real password is required.",
+  "vault_path": "/home/<user>/Documents/TheBrainOfChris",
   "port": 3456,
   "auth_token": "<random secret — generate with: openssl rand -hex 32>",
   "database_url": "postgresql:///engram?host=/var/run/postgresql",
