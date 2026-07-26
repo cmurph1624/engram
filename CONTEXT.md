@@ -20,12 +20,12 @@ This repo is the **deterministic core only**: item registry, FSRS scheduling, sp
 Mac (Claude Desktop / Cowork)
         │  HTTP + bearer auth, over Tailscale
         ▼
-http://100.109.128.123:3456/mcp   ← StreamableHTTP transport
+http://100.88.70.118:3456/mcp   ← StreamableHTTP transport
         │
    Engram daemon (pm2: "engram")  ── reads/writes ──►  Obsidian vault (concept notes, *.md)
-        │                                               /home/claudedev/Documents/TheBrainOfChris
+        │                                               C:\Users\rdpuser\Documents\TheBrainOfChris
         ▼
-   PostgreSQL  (DB "engram", peer auth, localhost socket only)
+   PostgreSQL  (DB "engram", TCP 127.0.0.1:5432 as "claudedev" — no Unix socket on Windows)
    items · rubric_points · reviews · point_scores
 ```
 
