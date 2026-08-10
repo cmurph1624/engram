@@ -5,7 +5,6 @@ import { loadConfig, type Config } from "./config.js";
 import { initPool, getPool, closePool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { registerAllTools } from "./tools/index.js";
-import { startBackupCron } from "./backup.js";
 
 function buildMcpServer(config: Config): McpServer {
   const server = new McpServer({ name: "engram", version: "2.0.0" });
@@ -72,8 +71,6 @@ async function main(): Promise<void> {
   };
   app.get("/mcp", auth, methodNotAllowed);
   app.delete("/mcp", auth, methodNotAllowed);
-
-  startBackupCron();
 
   const httpServer = app.listen(config.port, () => {
     console.log(`[engram] listening on :${config.port} (MCP at /mcp, health at /health)`);
