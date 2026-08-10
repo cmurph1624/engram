@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Engram is a **consolidation & recall system**: a Model Context Protocol (MCP) server that turns project work and study into durably remembered, explainable knowledge. It runs as a long-lived daemon on the Ubuntu dev server (`chris-c-series`) and is driven by Claude (Claude Desktop / Cowork on the Mac) over Tailscale. Chris uses it daily: a ~15-minute review session where Claude pulls a time-boxed queue, presents prompts cold, grades typed answers against rubrics, and records results — and a session-close checkpoint that captures new concepts as reviewable items.
+Engram is a **consolidation & recall system**: a Model Context Protocol (MCP) server that turns project work and study into durably remembered, explainable knowledge. It runs as a long-lived daemon on the Windows dev server (`STIGMERGYLABS`) and is driven by Claude (Claude Desktop / Cowork on the Mac) over Tailscale. Chris uses it daily: a ~15-minute review session where Claude pulls a time-boxed queue, presents prompts cold, grades typed answers against rubrics, and records results — and a session-close checkpoint that captures new concepts as reviewable items.
 
 This repo is the **deterministic core only**: item registry, FSRS scheduling, split/retirement mechanics, and vault note read/write. All intelligence (grading, rubric drafting, follow-up questions, checkpoint validation) lives in the Claude conversation and is intentionally NOT here.
 
@@ -50,32 +50,37 @@ Scheduling state never touches the vault; concept-note content never lives only 
 - **`get_review_queue` must never return answers, rubrics, traps, or follow-ups** — anything it returns may enter the conversation before the user answers cold. Cold retrieval is the whole point.
 - **The server never drafts compressions.** Writing the explanation is where learning happens; that is the user's job in conversation. The server only stores what it is given.
 - **All multi-statement DB work runs in explicit transactions.** A killed `record_review` must leave the DB consistent.
-- **Peer auth, localhost only.** Postgres is never exposed on Tailscale; the DB has no password (connects as the `claudedev` OS user via Unix socket).
+- **Localhost only.** Postgres is never exposed on Tailscale — it is bound to `127.0.0.1:5432`. Windows Postgres has no Unix socket, so the Ubuntu box's peer auth is not available here: the connection is TCP as role `claudedev` with a real password, held in `config.json` (gitignored). Only the MCP port (3456) is reachable over the tailnet, and it requires the bearer token.
 
 ## Project Structure
 
 ```
-~/Documents/dev/engram/          ← source AND runtime (pm2 runs dist/ from here)
+C:\Users\rdpuser\Documents\dev\engram\   ← source AND runtime (pm2 runs dist/ from here)
 ├── src/
-│   ├── server.ts                ← Express + StreamableHTTP transport, auth, /health, boot migrations, backup cron
+│   ├── server.ts                ← Express + StreamableHTTP transport, auth, /health, boot migrations
 │   ├── config.ts                ← load + validate config.json
 │   ├── db.ts                    ← pg Pool + withTransaction()
 │   ├── migrate.ts               ← numbered migrations, meta(version), applied on boot
 │   ├── migrations/001_init.sql  ← items, rubric_points, reviews, point_scores
+│   ├── types.ts                 ← shared row/domain types
+│   ├── repo.ts                  ← all SQL against items / rubric_points / reviews
 │   ├── fsrs.ts                  ← ts-fsrs wrapper: deriveRating(), schedule(), retrievability()
 │   ├── scheduler.ts             ← priority calc + greedy time-box fill
+│   ├── review.ts                ← record_review orchestration (schedule + persist + splits)
 │   ├── notes.ts                 ← gray-matter render (create) + parse (scan)
+│   ├── vault.ts                 ← vault file I/O: walk, read, write, srs_id stamping
 │   ├── splits.ts                ← split-on-miss + child-retirement mechanics
-│   ├── backup.ts                ← daily pg_dump cron task
 │   ├── tools/                   ← one file per MCP tool, each exports register(server)
 │   └── test/                    ← node:test (run via tsx)
 ├── docs/                        ← claude_desktop_config.md, review_playbook.md
-├── backups/                     ← pg_dump output (gitignored)
-├── config.json                  ← secrets (gitignored, mode 600)
+├── backups/                     ← manual pg_dump output (gitignored)
+├── config.json                  ← secrets (gitignored)
 └── config.example.json
 ```
 
-System paths: pm2 process `engram`; DB `engram` (PostgreSQL 17, localhost socket).
+System bindings: pm2 process `engram`, declared in `Documents\dev\server-config\ecosystem.config.js`;
+DB `engram` on PostgreSQL 17 at `127.0.0.1:5432`. There is no scheduled backup — the Ubuntu box's
+nightly `pg_dump` cron was dropped in the migration, so dumps into `backups/` are manual.
 
 ## Configuration (`config.json`, gitignored)
 
@@ -94,8 +99,14 @@ System paths: pm2 process `engram`; DB `engram` (PostgreSQL 17, localhost socket
 
 ## Source Material
 
-- Concept: `~/Documents/TheBrainOfChris/10 Projects/Engram/2026-06-06 - SRS v2 Concept - Consolidation & Recall System.md`
-- Spec: `~/Documents/TheBrainOfChris/10 Projects/Engram/V2 Build Spec.md`
-- Mode A (pm2 daemon) reference: `~/Documents/dev/Ganglion/`
-- MCP tool-registration reference: `~/Documents/dev/teamreach-mcp/src/tools/`
-- Server project pattern: `~/Documents/TheBrainOfChris/30 Resources/Patterns/Ubuntu Server Project Pattern.md`
+- Concept: `Documents\TheBrainOfChris\10 Projects\Engram\2026-06-06 - SRS v2 Concept - Consolidation & Recall System.md`
+- Spec: `Documents\TheBrainOfChris\10 Projects\Engram\V2 Build Spec.md`
+- Mode A (pm2 daemon) reference: `Documents\dev\Ganglion\`
+- MCP tool-registration reference: `Documents\dev\teamreach-mcp\src\tools\`
+- Server project pattern: `Documents\TheBrainOfChris\30 Resources\Patterns\Windows Server Project Pattern.md`
+  (the older `Ubuntu Server Project Pattern.md` is retained in the vault for history only —
+  every mechanism it names is wrong on this host)
+
+> ⚠️ The two source notes above are **not present in this machine's vault copy** as of
+> 2026-08-10 — there is no `10 Projects\Engram\` folder here at all. They may still exist on
+> the Mac; if so, Syncthing should bring them across. Same gap that lost four SAP concept notes.
