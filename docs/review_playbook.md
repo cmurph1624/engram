@@ -85,3 +85,6 @@ This is where building becomes learning.
   items by lapse ratio, what's coming in 7 days, open splits.
 - `list_items({ search, type, status })` to find or audit items; `retire_item` when a
   concept is no longer worth carrying (retires its children too).
+- To *read* cards rather than be tested on them, open `/browse` (see README) — it shows every
+  item at full text, including the compression. It records nothing, so it is not a review; if
+  you have read a card there, its next cold recall is no longer cold.

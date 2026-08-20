@@ -45,6 +45,30 @@ Scheduling state never touches the vault; concept-note content never lives only 
 | `get_stats` | Active count, recent reviews, weakest items, upcoming, open splits. |
 | `scan_vault` | Register/reconcile `srs: true` notes; stamp `srs_id` on new ones (the only vault mutation outside create). |
 
+## HTTP surface
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `POST /mcp` | `Authorization: Bearer` | The MCP transport. |
+| `GET /health` | none | Liveness + item count. |
+| `GET /browse` | bearer, `?token=`, or cookie | Read-only card browser (see below). |
+| `GET /api/cards` | same as `/browse` | JSON behind the browser: every item at full text. |
+
+**The card browser** is a reading surface, not a review surface. It shows everything at once —
+prompt, answer, rubric points with their split/retired status, trap, follow-up, the note's
+`## Compression`, and the FSRS numbers — and writes nothing. It exists because the review flow
+deliberately hides all of that until you have answered cold; sometimes you just want to flip
+through what you have.
+
+It is the **one place that surfaces `## Compression`**. `parseNote()` still hides it on purpose
+(§ Key Constraints: nothing that could leak into a prompt before the user answers), and no MCP
+tool returns it. Here Chris is reading his own cards on purpose, and the compression is the
+relearning path.
+
+Because a browser cannot set an `Authorization` header on a plain navigation, `/browse` also
+accepts `?token=<auth_token>` once, stores it in an HttpOnly cookie, and redirects to a clean
+URL. That cookie unlocks only the two read-only routes — never `/mcp`.
+
 ## Key Constraints
 
 - **`get_review_queue` must never return answers, rubrics, traps, or follow-ups** — anything it returns may enter the conversation before the user answers cold. Cold retrieval is the whole point.
@@ -57,7 +81,10 @@ Scheduling state never touches the vault; concept-note content never lives only 
 ```
 C:\Users\rdpuser\Documents\dev\engram\   ← source AND runtime (pm2 runs dist/ from here)
 ├── src/
-│   ├── server.ts                ← Express + StreamableHTTP transport, auth, /health, boot migrations
+│   ├── server.ts                ← boot: config, pool, migrations, listen
+│   ├── app.ts                   ← Express wiring: MCP transport, auth, /health, /browse, /api/cards
+│   ├── browse.ts                ← card payload for the browser (DB + compression), browse auth
+│   ├── browse-page.ts           ← the /browse page as a single self-contained HTML string
 │   ├── config.ts                ← load + validate config.json
 │   ├── db.ts                    ← pg Pool + withTransaction()
 │   ├── migrate.ts               ← numbered migrations, meta(version), applied on boot
