@@ -139,3 +139,34 @@ The physical trace a memory leaves.
   const after = parseNote(readFileSync(join(vault, rel), "utf8"));
   assert.ok(after.srs_id, "srs_id should be stamped into the note");
 });
+
+test("delete_item refuses while the concept note is still in the vault", async () => {
+  const created = await call("create_item", {
+    type: "fact",
+    title: "Junk Card",
+    note_folder: "Concepts",
+    compression: "throwaway",
+    prompt: "Delete me?",
+    answer: "yes",
+  });
+  await assert.rejects(
+    () => call("delete_item", { item_id: created.id }),
+    /concept note/,
+    "must refuse while the note exists"
+  );
+  assert.ok((await call("list_items", { search: "Junk Card" })).count === 1, "item survives");
+});
+
+test("delete_item removes the item once its note is gone", async () => {
+  const created = (await call("list_items", { search: "Junk Card" })).items[0];
+  const { unlinkSync } = await import("node:fs");
+  unlinkSync(join(vault, "Concepts/Junk Card.md"));
+
+  const res = await call("delete_item", { item_id: created.id });
+  assert.deepEqual(res.deleted, [created.id]);
+  assert.equal((await call("list_items", { search: "Junk Card" })).count, 0);
+});
+
+test("delete_item reports an unknown id", async () => {
+  await assert.rejects(() => call("delete_item", { item_id: "nope" }), /not found/);
+});

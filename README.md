@@ -116,6 +116,22 @@ status selectors filter the list; the default view is active items, due soonest 
 `GET /api/cards` returns the same data as JSON (`{ count, cards[] }`) if you want to script
 against it.
 
+### Deleting a card
+
+Each card has a **Delete** button, behind a second confirm because the delete is permanent and
+this host has no scheduled backup. It removes the item, its rubric points, its review history
+and any split children. The same thing is available to Claude as the `delete_item` MCP tool,
+and over HTTP as `DELETE /api/cards/:id`.
+
+To take a card out of circulation *without* destroying it, use `retire_item` instead — the row
+and its history survive.
+
+**A card whose concept note is still in the vault cannot be deleted** (the button reports the
+note path, the API returns 409). `scan_vault` re-registers any `srs: true` note whose `srs_id`
+is missing from the DB, so deleting the row alone would just be undone by the next scan, minus
+the review history. Delete the note in Obsidian first, or drop its `srs: true`. Engram never
+deletes vault files itself, so it never propagates a deletion to the Mac through Syncthing.
+
 ## Connecting from the Mac
 
 See `docs/claude_desktop_config.md` for the `mcpServers` snippet, and `docs/review_playbook.md` for the daily-review and session-checkpoint conversation flows.

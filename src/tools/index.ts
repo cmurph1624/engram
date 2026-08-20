@@ -6,6 +6,7 @@ import { register as recordReviewTool } from "./record_review.js";
 import { register as createItem } from "./create_item.js";
 import { register as updateItem } from "./update_item.js";
 import { register as retireItem } from "./retire_item.js";
+import { register as deleteItem } from "./delete_item.js";
 import { register as listItems } from "./list_items.js";
 import { register as getStats } from "./get_stats.js";
 import { register as scanVault } from "./scan_vault.js";
@@ -17,6 +18,7 @@ export function registerAllTools(server: McpServer, config: Config): void {
   createItem(server, config);
   updateItem(server, config);
   retireItem(server, config);
+  deleteItem(server, config);
   listItems(server, config);
   getStats(server, config);
   scanVault(server, config);

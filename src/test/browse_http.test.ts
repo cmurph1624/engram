@@ -9,12 +9,14 @@ import { initPool, getPool, closePool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { insertItem, insertRubricPoint } from "../repo.js";
 import { createApp } from "../app.js";
+import { writeNote } from "../vault.js";
 import { BROWSE_COOKIE } from "../browse.js";
 
 const TOKEN = "test-token-not-a-secret";
 
 let server: Server;
 let base: string;
+let vault: string;
 
 function url(path: string): string {
   return `${base}${path}`;
@@ -40,12 +42,21 @@ before(async () => {
     getPool()
   );
   await insertRubricPoint({ id: "hp1", item_id: "http1", ord: 1, text: "a point" }, getPool());
+  await insertItem(
+    {
+      id: "http2",
+      type: "fact",
+      note_path: "Concepts/Noted.md",
+      title: "Has A Note",
+      prompt: "Still noted?",
+      answer: "yes",
+      due: new Date("2026-08-06T00:00:00Z"),
+    },
+    getPool()
+  );
 
-  const config: Config = {
-    ...cfg,
-    auth_token: TOKEN,
-    vault_path: mkdtempSync(join(tmpdir(), "engram-http-")),
-  };
+  vault = mkdtempSync(join(tmpdir(), "engram-http-"));
+  const config: Config = { ...cfg, auth_token: TOKEN, vault_path: vault };
   server = createApp(config).listen(0);
   await new Promise<void>((resolve) => server.once("listening", () => resolve()));
   const addr = server.address();
@@ -94,8 +105,8 @@ test("GET /api/cards returns full cards to an authorised caller", async () => {
   const res = await fetch(url("/api/cards"), { headers: { authorization: `Bearer ${TOKEN}` } });
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(body.count, 1);
-  const card = body.cards[0];
+  assert.equal(body.count, 2);
+  const card = body.cards.find((c: { id: string }) => c.id === "http1");
   assert.equal(card.id, "http1");
   assert.equal(card.prompt, "Explain the route.");
   assert.equal(card.trap, "the trap");
@@ -117,4 +128,51 @@ test("/mcp still requires the bearer token", async () => {
     headers: { cookie: `${BROWSE_COOKIE}=${TOKEN}` },
   });
   assert.equal(withCookie.status, 401, "the browse cookie must not unlock /mcp");
+});
+
+test("DELETE /api/cards/:id without credentials is rejected", async () => {
+  const res = await fetch(url("/api/cards/http1"), { method: "DELETE" });
+  assert.equal(res.status, 401);
+});
+
+test("DELETE /api/cards/:id 404s on an unknown id", async () => {
+  const res = await fetch(url("/api/cards/nope"), {
+    method: "DELETE",
+    headers: { cookie: `${BROWSE_COOKIE}=${TOKEN}` },
+  });
+  assert.equal(res.status, 404);
+});
+
+test("DELETE /api/cards/:id 409s while the concept note exists, naming the note", async () => {
+  writeNote(
+    vault,
+    "Concepts/Noted.md",
+    `---
+srs: true
+---
+
+# Has A Note
+`
+  );
+  const res = await fetch(url("/api/cards/http2"), {
+    method: "DELETE",
+    headers: { cookie: `${BROWSE_COOKIE}=${TOKEN}` },
+  });
+  assert.equal(res.status, 409);
+  const body = await res.json();
+  assert.equal(body.error, "note_present");
+  assert.equal(body.note_path, "Concepts/Noted.md");
+});
+
+test("DELETE /api/cards/:id removes the card from the listing", async () => {
+  const res = await fetch(url("/api/cards/http1"), {
+    method: "DELETE",
+    headers: { cookie: `${BROWSE_COOKIE}=${TOKEN}` },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).deleted, ["http1"]);
+
+  const after = await fetch(url("/api/cards"), { headers: { authorization: `Bearer ${TOKEN}` } });
+  const body = await after.json();
+  assert.equal(body.cards.some((c: { id: string }) => c.id === "http1"), false);
 });
