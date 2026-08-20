@@ -68,7 +68,7 @@ export function renderNote(o: RenderOptions): string {
 }
 
 /** Split a markdown body into `## Heading` -> text sections. */
-function sections(body: string): Map<string, string> {
+export function sections(body: string): Map<string, string> {
   const out = new Map<string, string>();
   const parts = body.split(/^##\s+/m);
   for (const part of parts.slice(1)) {

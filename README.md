@@ -91,6 +91,31 @@ real `curl` against the tailnet address works — see `docs/claude_desktop_confi
 
 The `/mcp` endpoint requires `Authorization: Bearer <auth_token>`; `/health` does not.
 
+## Browsing the cards
+
+`GET /browse` is a read-only viewer for flipping through every item at full text — prompt,
+answer, rubric points (with their split/retired status), trap, follow-up, the note's
+`## Compression`, and the FSRS numbers. It writes nothing: no DB mutation, no vault write, no
+review recorded. It is for reading your own cards, not a substitute for the cold-recall review
+session in `docs/review_playbook.md`.
+
+From the Mac, over the tailnet:
+
+```
+http://100.88.70.118:3456/browse?token=<auth_token>
+```
+
+A browser cannot set an `Authorization` header on a plain navigation, so `?token=` is accepted
+once; the server stores it in an HttpOnly cookie and redirects to a clean `/browse`, keeping the
+token out of the URL bar and history. The cookie is good for 30 days and unlocks only `/browse`
+and `/api/cards` — `/mcp` still demands the bearer header.
+
+Keys: `←`/`→` (or `j`/`k`, or space) to flip, `/` to search, `Home`/`End` to jump. The type and
+status selectors filter the list; the default view is active items, due soonest first.
+
+`GET /api/cards` returns the same data as JSON (`{ count, cards[] }`) if you want to script
+against it.
+
 ## Connecting from the Mac
 
 See `docs/claude_desktop_config.md` for the `mcpServers` snippet, and `docs/review_playbook.md` for the daily-review and session-checkpoint conversation flows.
