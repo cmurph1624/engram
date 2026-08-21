@@ -67,6 +67,28 @@ export function renderNote(o: RenderOptions): string {
   return `${fm}\n\n${body.join("\n").trimEnd()}\n`;
 }
 
+/**
+ * Set one scalar key in a note's YAML frontmatter, rewriting only that line.
+ *
+ * Deliberately NOT a gray-matter round-trip. Re-serialising the block turns
+ * `date: 2026-06-06` into `date: 2026-06-06T00:00:00.000Z`, drops quoting and
+ * can reflow lists — i.e. it silently rewrites hand-authored vault notes, and
+ * Syncthing carries the damage to the Mac. `value` is raw YAML scalar text.
+ */
+export function setFrontmatterValue(content: string, key: string, value: string): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/);
+  if (!m) throw new Error("note has no frontmatter block");
+
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = m[1].split(/\r?\n/);
+  const at = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
+  if (at === -1) lines.push(`${key}: ${value}`);
+  else lines[at] = `${key}: ${value}`;
+
+  const block = `---${eol}${lines.join(eol)}${eol}---${m[2] ? eol : ""}`;
+  return block + content.slice(m[0].length);
+}
+
 /** Split a markdown body into `## Heading` -> text sections. */
 export function sections(body: string): Map<string, string> {
   const out = new Map<string, string>();

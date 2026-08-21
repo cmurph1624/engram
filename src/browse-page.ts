@@ -77,6 +77,18 @@ export const BROWSE_HTML = String.raw`<!doctype html>
   dl.meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 18px; margin: 0; }
   dl.meta dt { font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
   dl.meta dd { margin: 3px 0 0; font: 13px/1.4 var(--mono); }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button.btn {
+    font: 13px/1 inherit; padding: 8px 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer;
+  }
+  button.btn:hover { border-color: var(--muted); }
+  button.btn[disabled] { opacity: .5; cursor: default; }
+  button.danger { color: var(--warn); border-color: var(--warn); }
+  button.danger:hover { background: var(--warn); color: var(--bg); }
+  .notice { font: 12px/1.5 var(--mono); color: var(--muted); flex-basis: 100%; }
+  .notice.error { color: var(--warn); }
+  .flash { font: 12px/1.5 var(--mono); color: var(--ok); margin-bottom: 12px; }
   .empty { color: var(--muted); padding: 48px 0; text-align: center; }
   .hint { position: fixed; bottom: 0; right: 0; padding: 8px 14px; font: 11px/1 var(--mono);
           color: var(--muted); background: var(--bg); border-top: 1px solid var(--line);
@@ -105,7 +117,7 @@ export const BROWSE_HTML = String.raw`<!doctype html>
 
 <script>
 (function () {
-  var all = [], view = [], idx = 0;
+  var all = [], view = [], idx = 0, flash = null;
   var listEl = document.getElementById("list");
   var cardEl = document.getElementById("card");
   var countEl = document.getElementById("count");
@@ -181,6 +193,7 @@ export const BROWSE_HTML = String.raw`<!doctype html>
 
   function renderCard() {
     cardEl.textContent = "";
+    if (flash) cardEl.appendChild(el("div", "flash", flash));
     var c = view[idx];
     if (!c) {
       cardEl.appendChild(el("p", "empty", all.length ? "No card matches those filters." : "No cards yet."));
@@ -230,11 +243,85 @@ export const BROWSE_HTML = String.raw`<!doctype html>
       dl.appendChild(el("dd", null, row[1]));
     });
     cardEl.appendChild(block("Scheduling", dl));
+
+    // Delete is two-step on purpose: it is irreversible and there is no backup.
+    var actions = el("div", "actions");
+    var notice = el("div", "notice");
+
+    function offerDelete() {
+      actions.textContent = "";
+      var del = el("button", "btn danger", "Delete card");
+      del.addEventListener("click", askDelete);
+      actions.appendChild(del);
+      actions.appendChild(notice);
+    }
+
+    function askDelete() {
+      actions.textContent = "";
+      var yes = el("button", "btn danger", "Delete permanently");
+      var no = el("button", "btn", "Cancel");
+      yes.addEventListener("click", function () { doDelete(yes); });
+      no.addEventListener("click", offerDelete);
+      actions.appendChild(el("span", null, "Permanently delete this card, its rubric and its review history? Its note stays in the vault, unflagged."));
+      actions.appendChild(yes);
+      actions.appendChild(no);
+      actions.appendChild(notice);
+    }
+
+    function doDelete(btn) {
+      btn.disabled = true;
+      notice.className = "notice";
+      notice.textContent = "deleting…";
+      var at = idx;
+      fetch("/api/cards/" + encodeURIComponent(c.id), {
+        method: "DELETE",
+        credentials: "same-origin"
+      })
+        .then(function (r) {
+          return r.json().then(function (body) { return { status: r.status, body: body }; });
+        })
+        .then(function (out) {
+          if (out.status === 200) {
+            var gone = {};
+            out.body.deleted.forEach(function (id) { gone[id] = true; });
+            all = all.filter(function (x) { return !gone[x.id]; });
+            flash =
+              "deleted " + out.body.deleted.length + (out.body.deleted.length === 1 ? " card" : " cards") +
+              (out.body.unflagged_note ? " · note kept, unflagged: " + out.body.unflagged_note : "") +
+              (out.body.restored_point_id ? " · restored a rubric point on the parent" : "");
+            applyFilters();
+            idx = Math.max(0, Math.min(at, view.length - 1));
+            renderList();
+            renderCard();
+            return;
+          }
+          btn.disabled = false;
+          notice.className = "notice error";
+          if (out.body.error === "note_write_failed") {
+            notice.textContent =
+              "could not unflag the note at " + out.body.note_path + " (" + out.body.message +
+              ") — nothing was deleted";
+          } else if (out.status === 404) {
+            notice.textContent = "already gone — reload to refresh the list";
+          } else {
+            notice.textContent = "delete failed: " + (out.body.error || out.status);
+          }
+        })
+        .catch(function (err) {
+          btn.disabled = false;
+          notice.className = "notice error";
+          notice.textContent = "delete failed: " + err.message;
+        });
+    }
+
+    offerDelete();
+    cardEl.appendChild(block("Delete", actions));
     document.querySelector("main").scrollTop = 0;
   }
 
   function move(delta) {
     if (!view.length) return;
+    flash = null;
     idx = Math.min(view.length - 1, Math.max(0, idx + delta));
     renderList();
     renderCard();
@@ -254,6 +341,7 @@ export const BROWSE_HTML = String.raw`<!doctype html>
 
   [searchEl, typeEl, statusEl].forEach(function (n) {
     n.addEventListener("input", function () {
+      flash = null;
       var cur = view[idx];
       applyFilters(cur && cur.id);
     });

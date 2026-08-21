@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import matter from "gray-matter";
-import { renderNote, parseNote, type RenderOptions } from "../notes.js";
+import { renderNote, parseNote, setFrontmatterValue, type RenderOptions } from "../notes.js";
 
 const EXPLANATION: RenderOptions = {
   srs_id: "abc123",
@@ -112,4 +112,66 @@ Explain the thing.
   assert.equal(parsed.srs, true);
   assert.equal(parsed.srs_id, undefined);
   assert.deepEqual(parsed.rubric_points, ["point one", "point two"]);
+});
+
+// --- setFrontmatterValue --------------------------------------------------
+// These exist because a gray-matter round-trip is NOT safe here: re-serialising
+// the block turns `date: 2026-06-06` into `date: 2026-06-06T00:00:00.000Z` and
+// strips quoting, rewriting hand-authored notes (and syncing that to the Mac).
+
+const VAULT_NOTE = `---
+date: 2026-06-06
+tags:
+  - concept
+  - AIEngineering
+srs: true
+srs_id: "abc123"
+srs_type: explanation
+---
+
+# A Note
+
+## Compression
+
+my words
+`;
+
+test("setFrontmatterValue: flips a flag without touching anything else", () => {
+  const out = setFrontmatterValue(VAULT_NOTE, "srs", "false");
+  assert.match(out, /^srs: false$/m);
+  assert.match(out, /^date: 2026-06-06$/m, "the date must not be re-serialised");
+  assert.match(out, /^srs_id: "abc123"$/m, "quoting must survive");
+  assert.match(out, /^ {2}- AIEngineering$/m, "the tag list must survive");
+  assert.match(out, /## Compression\n\nmy words/);
+});
+
+test("setFrontmatterValue: appends the key when it is absent", () => {
+  const out = setFrontmatterValue(VAULT_NOTE.replace('srs_id: "abc123"\n', ""), "srs_id", '"new1"');
+  assert.match(out, /^srs_id: "new1"$/m);
+  assert.match(out, /^date: 2026-06-06$/m);
+});
+
+test("setFrontmatterValue: only the frontmatter block is considered", () => {
+  const body = `---
+srs: true
+---
+
+# T
+
+srs: true in the body must be left alone
+`;
+  const out = setFrontmatterValue(body, "srs", "false");
+  assert.match(out, /^srs: false$/m);
+  assert.match(out, /srs: true in the body must be left alone/);
+});
+
+test("setFrontmatterValue: preserves CRLF line endings", () => {
+  const crlf = "---\r\ndate: 2026-06-06\r\nsrs: true\r\n---\r\n\r\n# T\r\n";
+  const out = setFrontmatterValue(crlf, "srs", "false");
+  assert.match(out, /srs: false\r\n/);
+  assert.ok(!/[^\r]\n/.test(out), "no bare LF may be introduced");
+});
+
+test("setFrontmatterValue: refuses a note with no frontmatter", () => {
+  assert.throws(() => setFrontmatterValue("# Just a body\n", "srs", "false"), /frontmatter/);
 });

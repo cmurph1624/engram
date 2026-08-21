@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { join, dirname, relative, sep } from "node:path";
 import matter from "gray-matter";
+import { setFrontmatterValue } from "./notes.js";
 
 /** Absolute path for a vault-relative note path. */
 export function abs(vaultPath: string, relPath: string): string {
@@ -63,13 +64,22 @@ export function walkSrsNotes(
   return out;
 }
 
+/**
+ * Flip a note's `srs` frontmatter flag, preserving the rest of the file byte
+ * for byte. Setting it false is how a deleted item's note stops advertising
+ * itself to `scan_vault` while the writing survives as an ordinary note.
+ */
+export function setSrsFlag(vaultPath: string, relPath: string, value: boolean): void {
+  const full = abs(vaultPath, relPath);
+  const raw = readFileSync(full, "utf8");
+  writeFileSync(full, setFrontmatterValue(raw, "srs", value ? "true" : "false"), "utf8");
+}
+
 /** Stamp an `srs_id` into an existing note's frontmatter, preserving body. */
 export function stampSrsId(vaultPath: string, relPath: string, srsId: string): void {
   const full = abs(vaultPath, relPath);
   const raw = readFileSync(full, "utf8");
-  const parsed = matter(raw);
-  parsed.data.srs_id = srsId;
-  writeFileSync(full, matter.stringify(parsed.content, parsed.data), "utf8");
+  writeFileSync(full, setFrontmatterValue(raw, "srs_id", `"${srsId}"`), "utf8");
 }
 
 export { statSync };

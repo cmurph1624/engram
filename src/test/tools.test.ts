@@ -139,3 +139,38 @@ The physical trace a memory leaves.
   const after = parseNote(readFileSync(join(vault, rel), "utf8"));
   assert.ok(after.srs_id, "srs_id should be stamped into the note");
 });
+
+test("delete_item unflags the concept note and removes the item", async () => {
+  const created = await call("create_item", {
+    type: "fact",
+    title: "Junk Card",
+    note_folder: "Concepts",
+    compression: "throwaway",
+    prompt: "Delete me?",
+    answer: "yes",
+  });
+
+  const res = await call("delete_item", { item_id: created.id });
+  assert.deepEqual(res.deleted, [created.id]);
+  assert.equal(res.unflagged_note, "Concepts/Junk Card.md");
+  assert.equal((await call("list_items", { search: "Junk Card" })).count, 0);
+
+  // the note is still on disk, no longer an SRS note, writing intact
+  const note = readFileSync(join(vault, "Concepts/Junk Card.md"), "utf8");
+  assert.equal(parseNote(note).srs, false);
+  assert.match(note, /throwaway/);
+});
+
+test("a deleted item's note is not re-registered by scan_vault", async () => {
+  const res = await call("scan_vault", {});
+  assert.equal(
+    res.registered.some((r: { note_path: string }) => r.note_path === "Concepts/Junk Card.md"),
+    false,
+    "an unflagged note must stay dead"
+  );
+  assert.equal((await call("list_items", { search: "Junk Card" })).count, 0);
+});
+
+test("delete_item reports an unknown id", async () => {
+  await assert.rejects(() => call("delete_item", { item_id: "nope" }), /not found/);
+});

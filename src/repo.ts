@@ -169,3 +169,28 @@ export async function getChildren(parentId: string, client?: Q): Promise<ItemRow
   );
   return rows;
 }
+
+// --- deletion (see deletion.ts for the ordering these must be called in) ---
+
+/** Point scores belonging to the given items' reviews or rubric points. */
+export async function deletePointScoresForItems(itemIds: string[], client: Q): Promise<void> {
+  await client.query(
+    `DELETE FROM point_scores
+      WHERE review_id IN (SELECT id FROM reviews WHERE item_id = ANY($1))
+         OR point_id IN (SELECT id FROM rubric_points WHERE item_id = ANY($1))`,
+    [itemIds]
+  );
+}
+
+export async function deleteReviewsForItems(itemIds: string[], client: Q): Promise<void> {
+  await client.query(`DELETE FROM reviews WHERE item_id = ANY($1)`, [itemIds]);
+}
+
+export async function deleteRubricPointsForItems(itemIds: string[], client: Q): Promise<void> {
+  await client.query(`DELETE FROM rubric_points WHERE item_id = ANY($1)`, [itemIds]);
+}
+
+export async function deleteItemsById(itemIds: string[], client: Q): Promise<void> {
+  if (!itemIds.length) return;
+  await client.query(`DELETE FROM items WHERE id = ANY($1)`, [itemIds]);
+}

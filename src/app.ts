@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import { getPool } from "./db.js";
 import { registerAllTools } from "./tools/index.js";
 import { loadCards, isBrowseAuthorized, BROWSE_COOKIE } from "./browse.js";
+import { deleteItemCascade } from "./deletion.js";
 import { BROWSE_HTML } from "./browse-page.js";
 
 function buildMcpServer(config: Config): McpServer {
@@ -110,6 +111,37 @@ export function createApp(config: Config): express.Express {
     } catch (err) {
       console.error(`[engram] /api/cards error: ${(err as Error).message}`);
       res.status(500).json({ error: "could not load cards" });
+    }
+  });
+
+  // Destructive, and reachable with the browse cookie — the cookie is
+  // SameSite=Lax and no CORS headers are set, so another origin cannot fire it.
+  app.delete("/api/cards/:id", browseAuth, async (req: Request, res: Response) => {
+    try {
+      const result = await deleteItemCascade(req.params.id, config.vault_path);
+      if (result.ok) {
+        console.log(`[engram] deleted ${result.deleted.join(", ")}`);
+        res.json({
+          deleted: result.deleted,
+          restored_point_id: result.restored_point_id,
+          unflagged_note: result.unflagged_note,
+        });
+        return;
+      }
+      if (result.reason === "not_found") {
+        res.status(404).json({ error: "item not found" });
+        return;
+      }
+      // The note could not be unflagged, so nothing was deleted — deleting the
+      // row while the note still says `srs: true` would only invite it back.
+      res.status(500).json({
+        error: "note_write_failed",
+        note_path: result.note_path,
+        message: result.message,
+      });
+    } catch (err) {
+      console.error(`[engram] delete error: ${(err as Error).message}`);
+      res.status(500).json({ error: "could not delete item" });
     }
   });
 

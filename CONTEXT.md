@@ -31,7 +31,7 @@ http://100.88.70.118:3456/mcp   ← StreamableHTTP transport
 
 Scheduling state never touches the vault; concept-note content never lives only in the DB (DB is reconciled from notes on `scan_vault`).
 
-## MCP Tools (9)
+## MCP Tools (10)
 
 | Tool | Purpose |
 |---|---|
@@ -40,7 +40,8 @@ Scheduling state never touches the vault; concept-note content never lives only 
 | `record_review` | One transaction: derive FSRS rating from per-point scores, schedule, record review, run split/retirement. |
 | `create_item` | Mint id, render + write concept note to the vault, insert item + rubric points atomically. |
 | `update_item` | Edit item fields in the DB (mainly to refine auto-spawned child prompts). |
-| `retire_item` | Retire an item (and its children). |
+| `retire_item` | Retire an item (and its children) — reversible; the row and its history survive. |
+| `delete_item` | **Permanently** delete an item, its rubric points, its reviews and its split children. Flips the concept note to `srs: false`; the file is kept. |
 | `list_items` | Filterable summaries with due dates and lapse counts. |
 | `get_stats` | Active count, recent reviews, weakest items, upcoming, open splits. |
 | `scan_vault` | Register/reconcile `srs: true` notes; stamp `srs_id` on new ones (the only vault mutation outside create). |
@@ -53,6 +54,7 @@ Scheduling state never touches the vault; concept-note content never lives only 
 | `GET /health` | none | Liveness + item count. |
 | `GET /browse` | bearer, `?token=`, or cookie | Read-only card browser (see below). |
 | `GET /api/cards` | same as `/browse` | JSON behind the browser: every item at full text. |
+| `DELETE /api/cards/:id` | same as `/browse` | Hard-delete one card, unflagging its note. |
 
 **The card browser** is a reading surface, not a review surface. It shows everything at once —
 prompt, answer, rubric points with their split/retired status, trap, follow-up, the note's
@@ -67,7 +69,33 @@ relearning path.
 
 Because a browser cannot set an `Authorization` header on a plain navigation, `/browse` also
 accepts `?token=<auth_token>` once, stores it in an HttpOnly cookie, and redirects to a clean
-URL. That cookie unlocks only the two read-only routes — never `/mcp`.
+URL. That cookie unlocks the three `/browse` + `/api/cards` routes — never `/mcp`. One of those
+three is destructive, so note that the cookie can delete: it is `SameSite=Lax` and no CORS
+headers are set, so another origin cannot fire the DELETE, but anyone holding the cookie can.
+
+## Deleting items
+
+`retire_item` is the reversible exit — the card leaves the queue, the row and its review
+history stay. `delete_item` (and `DELETE /api/cards/:id`, the same code path in `deletion.ts`)
+is the irreversible one, for junk: test items, mis-created cards. It takes the item, its rubric
+points, its reviews, its point scores and its split children in a single transaction. There is
+no scheduled backup on this host, so the UI makes you confirm twice.
+
+**Deleting flips the item's concept note to `srs: false` before it touches a row.** That is not
+optional bookkeeping — `scan_vault` re-registers any `srs: true` note whose `srs_id` is absent
+from the DB, so a DB-only delete is silently undone by the next scan, with the review history
+gone and the FSRS state reset. Unflagging makes the note invisible to `walkSrsNotes` while the
+writing survives as an ordinary Obsidian note. Engram still never deletes a vault file, so
+nothing it does propagates a *deletion* through Syncthing — only the frontmatter edit.
+
+Order matters, and `deletion.ts` fixes it: unflag first, then delete the rows. A crash in
+between leaves a live item with a dormant note (harmless and visible) rather than a deleted
+item with a note that resurrects it. If the transaction fails, the flag is put back; if the
+note cannot be written at all, nothing is deleted and the caller is told why.
+
+Deleting a **split child** on its own restores the parent's rubric point to `active`, the same
+restoration `checkChildRetirement` performs — otherwise the parent would quietly lose a
+gradeable claim for good.
 
 ## Key Constraints
 
@@ -84,6 +112,7 @@ C:\Users\rdpuser\Documents\dev\engram\   ← source AND runtime (pm2 runs dist/ 
 │   ├── server.ts                ← boot: config, pool, migrations, listen
 │   ├── app.ts                   ← Express wiring: MCP transport, auth, /health, /browse, /api/cards
 │   ├── browse.ts                ← card payload for the browser (DB + compression), browse auth
+│   ├── deletion.ts              ← hard delete: cascade, note guard, rubric-point restoration
 │   ├── browse-page.ts           ← the /browse page as a single self-contained HTML string
 │   ├── config.ts                ← load + validate config.json
 │   ├── db.ts                    ← pg Pool + withTransaction()
