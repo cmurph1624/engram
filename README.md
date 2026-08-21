@@ -126,11 +126,12 @@ and over HTTP as `DELETE /api/cards/:id`.
 To take a card out of circulation *without* destroying it, use `retire_item` instead — the row
 and its history survive.
 
-**A card whose concept note is still in the vault cannot be deleted** (the button reports the
-note path, the API returns 409). `scan_vault` re-registers any `srs: true` note whose `srs_id`
-is missing from the DB, so deleting the row alone would just be undone by the next scan, minus
-the review history. Delete the note in Obsidian first, or drop its `srs: true`. Engram never
-deletes vault files itself, so it never propagates a deletion to the Mac through Syncthing.
+**The card's concept note is handled for you.** Deleting flips the note's frontmatter to
+`srs: false` and leaves the file where it is — your compression survives as an ordinary
+Obsidian note, it just stops being a card. This is not cosmetic: `scan_vault` re-registers any
+`srs: true` note whose `srs_id` is missing from the DB, so deleting the row alone would be
+undone by the next scan, minus the review history. Engram never deletes a vault file, so the
+only thing Syncthing carries to the Mac is the one-line frontmatter change.
 
 ## Connecting from the Mac
 

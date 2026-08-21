@@ -121,14 +121,24 @@ export function createApp(config: Config): express.Express {
       const result = await deleteItemCascade(req.params.id, config.vault_path);
       if (result.ok) {
         console.log(`[engram] deleted ${result.deleted.join(", ")}`);
-        res.json({ deleted: result.deleted, restored_point_id: result.restored_point_id });
+        res.json({
+          deleted: result.deleted,
+          restored_point_id: result.restored_point_id,
+          unflagged_note: result.unflagged_note,
+        });
         return;
       }
       if (result.reason === "not_found") {
         res.status(404).json({ error: "item not found" });
         return;
       }
-      res.status(409).json({ error: "note_present", note_path: result.note_path });
+      // The note could not be unflagged, so nothing was deleted — deleting the
+      // row while the note still says `srs: true` would only invite it back.
+      res.status(500).json({
+        error: "note_write_failed",
+        note_path: result.note_path,
+        message: result.message,
+      });
     } catch (err) {
       console.error(`[engram] delete error: ${(err as Error).message}`);
       res.status(500).json({ error: "could not delete item" });

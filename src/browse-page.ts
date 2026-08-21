@@ -262,7 +262,7 @@ export const BROWSE_HTML = String.raw`<!doctype html>
       var no = el("button", "btn", "Cancel");
       yes.addEventListener("click", function () { doDelete(yes); });
       no.addEventListener("click", offerDelete);
-      actions.appendChild(el("span", null, "Permanently delete this card, its rubric and its review history?"));
+      actions.appendChild(el("span", null, "Permanently delete this card, its rubric and its review history? Its note stays in the vault, unflagged."));
       actions.appendChild(yes);
       actions.appendChild(no);
       actions.appendChild(notice);
@@ -287,6 +287,7 @@ export const BROWSE_HTML = String.raw`<!doctype html>
             all = all.filter(function (x) { return !gone[x.id]; });
             flash =
               "deleted " + out.body.deleted.length + (out.body.deleted.length === 1 ? " card" : " cards") +
+              (out.body.unflagged_note ? " · note kept, unflagged: " + out.body.unflagged_note : "") +
               (out.body.restored_point_id ? " · restored a rubric point on the parent" : "");
             applyFilters();
             idx = Math.max(0, Math.min(at, view.length - 1));
@@ -296,10 +297,10 @@ export const BROWSE_HTML = String.raw`<!doctype html>
           }
           btn.disabled = false;
           notice.className = "notice error";
-          if (out.status === 409) {
+          if (out.body.error === "note_write_failed") {
             notice.textContent =
-              "still has a concept note at " + out.body.note_path +
-              " — delete it in Obsidian (or drop its 'srs: true'), then try again";
+              "could not unflag the note at " + out.body.note_path + " (" + out.body.message +
+              ") — nothing was deleted";
           } else if (out.status === 404) {
             notice.textContent = "already gone — reload to refresh the list";
           } else {

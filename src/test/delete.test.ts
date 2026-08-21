@@ -15,7 +15,8 @@ import {
   getItem,
   getRubricPoints,
 } from "../repo.js";
-import { writeNote } from "../vault.js";
+import { writeNote, readNote, walkSrsNotes } from "../vault.js";
+import { renderNote, parseNote } from "../notes.js";
 import { deleteItemCascade } from "../deletion.js";
 
 let vault: string;
@@ -158,21 +159,56 @@ test("deleting a parent reports no restored point (its points are gone anyway)",
   assert.equal(res.restored_point_id, null);
 });
 
-test("refuses while the concept note is still in the vault, deleting nothing", async () => {
-  const rel = "Concepts/Still Here.md";
-  writeNote(vault, rel, "---\nsrs: true\nsrs_id: \"d_parent\"\n---\n\n# Still Here\n");
+test("unflags the concept note instead of refusing, and deletes the row", async () => {
+  const rel = "Concepts/Unflag Me.md";
+  writeNote(
+    vault,
+    rel,
+    renderNote({
+      srs_id: "d_parent",
+      srs_type: "explanation",
+      title: "Unflag Me",
+      date: "2026-06-06",
+      compression: "my own words, which must survive",
+      prompt: "Explain the parent.",
+      rubric_points: ["one", "two"],
+    })
+  );
   await seed(rel);
 
   const res = await deleteItemCascade("d_parent", vault);
-  assert.equal(res.ok, false);
-  if (res.ok) return;
-  assert.equal(res.reason, "note_present");
-  assert.equal(res.note_path, rel);
+  assert.equal(res.ok, true);
+  if (!res.ok) return;
+  assert.equal(res.unflagged_note, rel);
+  assert.equal(await getItem("d_parent"), null);
 
-  assert.ok(await getItem("d_parent"), "nothing may be deleted on refusal");
-  assert.ok(await getItem("d_child"));
-  assert.equal(await count("rubric_points", "item_id = $1", ["d_parent"]), 2);
-  assert.equal(await count("reviews", "item_id = $1", ["d_parent"]), 1);
+  // the file survives, no longer advertises itself to scan_vault, and keeps the writing
+  const after = readNote(vault, rel);
+  assert.equal(parseNote(after).srs, false);
+  assert.match(after, /my own words, which must survive/);
+  assert.match(after, /# Unflag Me/);
+});
+
+test("an unflagged note is invisible to a vault walk, so it cannot resurrect", async () => {
+  const rel = "Concepts/Gone For Good.md";
+  writeNote(
+    vault,
+    rel,
+    renderNote({
+      srs_id: "d_parent",
+      srs_type: "fact",
+      title: "Gone For Good",
+      date: "2026-06-06",
+      compression: "c",
+      prompt: "q",
+      answer: "a",
+    })
+  );
+  await seed(rel);
+  await deleteItemCascade("d_parent", vault);
+
+  const walked = walkSrsNotes(vault).map((n) => n.relPath);
+  assert.equal(walked.includes(rel), false, "scan_vault must not see it again");
 });
 
 test("deletes when note_path is set but the file is gone", async () => {

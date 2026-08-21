@@ -9,7 +9,7 @@ import { initPool, getPool, closePool } from "../db.js";
 import { migrate } from "../migrate.js";
 import { insertItem, insertRubricPoint } from "../repo.js";
 import { createApp } from "../app.js";
-import { writeNote } from "../vault.js";
+import { writeNote, readNote } from "../vault.js";
 import { BROWSE_COOKIE } from "../browse.js";
 
 const TOKEN = "test-token-not-a-secret";
@@ -143,7 +143,7 @@ test("DELETE /api/cards/:id 404s on an unknown id", async () => {
   assert.equal(res.status, 404);
 });
 
-test("DELETE /api/cards/:id 409s while the concept note exists, naming the note", async () => {
+test("DELETE /api/cards/:id unflags the concept note rather than refusing", async () => {
   writeNote(
     vault,
     "Concepts/Noted.md",
@@ -158,10 +158,13 @@ srs: true
     method: "DELETE",
     headers: { cookie: `${BROWSE_COOKIE}=${TOKEN}` },
   });
-  assert.equal(res.status, 409);
+  assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(body.error, "note_present");
-  assert.equal(body.note_path, "Concepts/Noted.md");
+  assert.deepEqual(body.deleted, ["http2"]);
+  assert.equal(body.unflagged_note, "Concepts/Noted.md");
+
+  // file survives, flag is off
+  assert.match(readNote(vault, "Concepts/Noted.md"), /srs: false/);
 });
 
 test("DELETE /api/cards/:id removes the card from the listing", async () => {

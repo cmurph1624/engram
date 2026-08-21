@@ -140,7 +140,7 @@ The physical trace a memory leaves.
   assert.ok(after.srs_id, "srs_id should be stamped into the note");
 });
 
-test("delete_item refuses while the concept note is still in the vault", async () => {
+test("delete_item unflags the concept note and removes the item", async () => {
   const created = await call("create_item", {
     type: "fact",
     title: "Junk Card",
@@ -149,21 +149,25 @@ test("delete_item refuses while the concept note is still in the vault", async (
     prompt: "Delete me?",
     answer: "yes",
   });
-  await assert.rejects(
-    () => call("delete_item", { item_id: created.id }),
-    /concept note/,
-    "must refuse while the note exists"
-  );
-  assert.ok((await call("list_items", { search: "Junk Card" })).count === 1, "item survives");
-});
-
-test("delete_item removes the item once its note is gone", async () => {
-  const created = (await call("list_items", { search: "Junk Card" })).items[0];
-  const { unlinkSync } = await import("node:fs");
-  unlinkSync(join(vault, "Concepts/Junk Card.md"));
 
   const res = await call("delete_item", { item_id: created.id });
   assert.deepEqual(res.deleted, [created.id]);
+  assert.equal(res.unflagged_note, "Concepts/Junk Card.md");
+  assert.equal((await call("list_items", { search: "Junk Card" })).count, 0);
+
+  // the note is still on disk, no longer an SRS note, writing intact
+  const note = readFileSync(join(vault, "Concepts/Junk Card.md"), "utf8");
+  assert.equal(parseNote(note).srs, false);
+  assert.match(note, /throwaway/);
+});
+
+test("a deleted item's note is not re-registered by scan_vault", async () => {
+  const res = await call("scan_vault", {});
+  assert.equal(
+    res.registered.some((r: { note_path: string }) => r.note_path === "Concepts/Junk Card.md"),
+    false,
+    "an unflagged note must stay dead"
+  );
   assert.equal((await call("list_items", { search: "Junk Card" })).count, 0);
 });
 
