@@ -12,6 +12,33 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Strip trailing slashes and normalise Windows separators to POSIX. */
+function normalizeFolder(folder: string): string {
+  return folder.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+/**
+ * Reject anything that would escape the vault or smuggle a separator into a
+ * filename. `join()` silently resolves `..`, so without this a note_folder of
+ * `../../etc` writes outside the vault entirely.
+ */
+function validatePathParts(folder: string, title: string): string | null {
+  if (/^([a-zA-Z]:|[/\\])/.test(folder)) {
+    return `note_folder must be vault-relative, not absolute: "${folder}"`;
+  }
+  const segments = folder.split("/").filter(Boolean);
+  if (segments.some((s) => s === "." || s === "..")) {
+    return `note_folder must not contain "." or ".." segments — that resolves outside the vault: "${folder}"`;
+  }
+  if (/[/\\]/.test(title)) {
+    return `title must not contain a path separator: "${title}" — use note_folder for the location`;
+  }
+  if (title === "." || title === ".." || title.trim() === "") {
+    return `invalid title: "${title}"`;
+  }
+  return null;
+}
+
 export function register(server: McpServer, config: Config): void {
   server.tool(
     "create_item",
@@ -20,6 +47,14 @@ export function register(server: McpServer, config: Config): void {
       type: z.enum(["fact", "explanation", "project"]),
       title: z.string().describe("Note title and filename (within note_folder)."),
       note_folder: z.string().describe("Vault-relative folder for the note, e.g. '30 Resources/Concepts'."),
+      domain: z
+        .string()
+        .optional()
+        .describe(
+          config.concept_domains.length
+            ? `Routes the note to <note_folder>/Concepts/<domain>/. One of: ${config.concept_domains.join("; ")}.`
+            : "Routes the note to <note_folder>/Concepts/<domain>/. No domains configured."
+        ),
       compression: z.string().describe("The human-written explanation. Stored verbatim, never parsed."),
       prompt: z.string().describe("The question (fact) or explanation prompt (explanation/project)."),
       audience: z.string().optional().describe("Who the explanation is for; baked into the prompt."),
@@ -31,9 +66,35 @@ export function register(server: McpServer, config: Config): void {
       tags: z.array(z.string()).optional(),
     },
     async (a) => {
-      logToolCall("create_item", { type: a.type });
+      logToolCall("create_item", { type: a.type, domain: a.domain });
       const id = nanoid();
-      const relPath = `${a.note_folder.replace(/\/+$/, "")}/${a.title}.md`;
+      const folder = normalizeFolder(a.note_folder);
+
+      const pathError = validatePathParts(folder, a.title);
+      if (pathError) return errorResult(pathError);
+
+      if (a.domain !== undefined) {
+        if (!config.concept_domains.includes(a.domain)) {
+          return errorResult(
+            `unknown domain "${a.domain}". Valid domains: ${config.concept_domains.join("; ")}`
+          );
+        }
+      }
+
+      const targetFolder = a.domain ? `${folder}/Concepts/${a.domain}` : folder;
+
+      // Track roots are organised into Concepts/<domain>/; a flat write there is
+      // the drift this guard exists to stop.
+      if (config.protected_note_folders.map(normalizeFolder).includes(targetFolder)) {
+        const options = config.concept_domains.length
+          ? config.concept_domains.map((d) => `Concepts/${d}`).join("; ")
+          : "a subfolder";
+        return errorResult(
+          `"${targetFolder}" does not take notes directly — pass a \`domain\` so the note is routed to one of: ${options}`
+        );
+      }
+
+      const relPath = `${targetFolder}/${a.title}.md`;
 
       if (noteExists(config.vault_path, relPath)) {
         return errorResult(`note already exists: ${relPath}`);

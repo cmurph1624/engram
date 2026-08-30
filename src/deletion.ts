@@ -26,7 +26,21 @@ import {
   deleteRubricPointsForItems,
   deleteItemsById,
 } from "./repo.js";
-import { noteExists, setSrsFlag } from "./vault.js";
+import { noteExists, setSrsFlag, walkSrsNotes } from "./vault.js";
+
+/**
+ * Locate an item's note. The stored path wins when it still resolves; when it
+ * does not, the note may simply have been moved (reorganising folders is a
+ * normal thing to do in Obsidian, and `scan_vault` repairs paths only when it
+ * next runs). Falling back to an `srs_id` search closes the window in which a
+ * moved note would be left flagged `srs: true` after its rows were deleted —
+ * which the next scan would then resurrect as a brand-new card.
+ */
+function findNote(vaultPath: string, notePath: string | null, itemId: string): string | null {
+  if (notePath && noteExists(vaultPath, notePath)) return notePath;
+  const match = walkSrsNotes(vaultPath).find((n) => n.data.srs_id === itemId);
+  return match ? match.relPath : null;
+}
 
 export type DeleteResult =
   | {
@@ -47,17 +61,18 @@ export async function deleteItemCascade(
   if (!existing) return { ok: false, reason: "not_found" };
 
   let unflagged: string | null = null;
-  if (existing.note_path && noteExists(vaultPath, existing.note_path)) {
+  const notePath = findNote(vaultPath, existing.note_path, itemId);
+  if (notePath) {
     try {
-      setSrsFlag(vaultPath, existing.note_path, false);
-      unflagged = existing.note_path;
+      setSrsFlag(vaultPath, notePath, false);
+      unflagged = notePath;
     } catch (err) {
       // Leave the row alone: a card whose note still says `srs: true` must not
       // be deleted, or the next scan_vault brings it back.
       return {
         ok: false,
         reason: "note_write_failed",
-        note_path: existing.note_path,
+        note_path: notePath,
         message: (err as Error).message,
       };
     }

@@ -6,8 +6,27 @@
   "database_url": "postgresql:///engram?host=/var/run/postgresql",
   "test_database_url": "postgresql:///engram_test?host=/var/run/postgresql",
   "default_time_budget_minutes": 15,
-  "cost_estimates_minutes": { "fact": 0.5, "explanation": 4, "project": 8 },
+  "cost_estimates_minutes": {
+    "fact": 0.5,
+    "explanation": 4,
+    "project": 8
+  },
   "project_first_interval_days": 21,
   "child_retirement_streak": 2,
-  "fsrs": { "request_retention": 0.9 }
+  "fsrs": {
+    "request_retention": 0.9
+  },
+  "concept_domains": [
+    "Applications and Integration",
+    "Model Selection and Optimization",
+    "Agents and Workflows",
+    "Prompt and Context Engineering",
+    "Tools and MCPs",
+    "Security and Safety",
+    "Claude Code",
+    "Eval, Testing, and Debugging"
+  ],
+  "protected_note_folders": [
+    "10 Projects/Certifications & Courses/02 Anthropic Track"
+  ]
 }
