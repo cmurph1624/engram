@@ -10,6 +10,25 @@ import {
   recentRatings,
 } from "./repo.js";
 
+/** Max length of a composed split-child title. */
+export const TITLE_MAX = 200;
+
+/**
+ * Compose a split child's title as `parent — point`, capped at TITLE_MAX.
+ * Over-long titles are cut on a word boundary and marked with an ellipsis, so
+ * they read as deliberately elided rather than as a mid-word truncation. If the
+ * nearest word boundary is so far back that the cut would throw away most of the
+ * title (an unbroken run near the cap), fall back to a hard cut. The point text
+ * is never lost — it is stored verbatim on the child's own rubric point.
+ */
+export function composeSplitTitle(parentTitle: string, pointText: string): string {
+  const full = `${parentTitle} — ${pointText}`;
+  if (full.length <= TITLE_MAX) return full;
+  const boundary = full.lastIndexOf(" ", TITLE_MAX - 1); // -1 leaves room for the ellipsis
+  const cut = boundary >= TITLE_MAX / 2 ? boundary : TITLE_MAX - 1;
+  return full.slice(0, cut).trimEnd() + "…";
+}
+
 /**
  * Split a missed rubric point off the parent into its own fast-clock child item.
  * The point is marked `split` (excluded from the parent's surviving points until
@@ -26,7 +45,7 @@ export async function applySplit(
   await setRubricPointStatus(point.id, "split", client);
 
   const childId = nanoid();
-  const title = `${parent.title} — ${point.text}`.slice(0, 200);
+  const title = composeSplitTitle(parent.title, point.text);
   const prompt =
     customPrompt ?? `Explain: ${point.text} (in the context of ${parent.title})`;
 

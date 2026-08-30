@@ -7,6 +7,7 @@ import { migrate } from "../migrate.js";
 import { withTransaction } from "../db.js";
 import { loadConfig } from "../config.js";
 import { recordReview } from "../review.js";
+import { composeSplitTitle, TITLE_MAX } from "../splits.js";
 import {
   insertItem,
   insertRubricPoint,
@@ -224,4 +225,51 @@ test("fact items schedule directly from the passed rating", async () => {
   assert.equal(r.splits_created.length, 0);
   const item = await getItem(id, p);
   assert.equal(item!.reps, 1);
+});
+
+// --- composeSplitTitle ------------------------------------------------------
+// A split child's title is `parent — point`, which can overrun the 200-char cap.
+// The old `.slice(0, 200)` cut mid-word ("...Claude actually pro"), which reads
+// as data loss rather than elision. Cut on a word boundary and mark it elided.
+
+test("composeSplitTitle leaves a short title untouched", () => {
+  const title = composeSplitTitle("Webhook Retries", "backoff + jitter");
+  assert.equal(title, "Webhook Retries — backoff + jitter");
+  assert.ok(!title.includes("…"));
+});
+
+test("composeSplitTitle leaves a title of exactly the cap untouched", () => {
+  // 3 chars of separator (" — ") + parent + point == exactly TITLE_MAX
+  const parent = "p".repeat(100);
+  const point = "q".repeat(TITLE_MAX - 100 - 3);
+  const title = composeSplitTitle(parent, point);
+  assert.equal(title.length, TITLE_MAX);
+  assert.ok(!title.endsWith("…"));
+});
+
+test("composeSplitTitle cuts on a word boundary and marks the elision", () => {
+  // The real card that surfaced this: composes to 205 chars, so the old slice
+  // truncated "produces" to "pro".
+  const parent = "Goal vs Loop - Completion Condition vs Recurring Check";
+  const point =
+    "States that the evaluator reads only the transcript, and draws the " +
+    "consequence: the condition must be checkable from output Claude actually produces";
+  const title = composeSplitTitle(parent, point);
+
+  assert.ok(title.length <= TITLE_MAX, `got ${title.length}`);
+  assert.ok(title.endsWith("…"));
+  assert.ok(!title.endsWith("pro…"), "must not cut mid-word");
+  assert.ok(title.endsWith("actually…"), title);
+});
+
+test("composeSplitTitle does not leave a space before the ellipsis", () => {
+  const title = composeSplitTitle("A".repeat(190), "bb cc dd ee ff gg hh");
+  assert.ok(title.endsWith("…"));
+  assert.ok(!title.endsWith(" …"), title);
+});
+
+test("composeSplitTitle still caps an unbroken run with no space to cut at", () => {
+  const title = composeSplitTitle("Parent", "z".repeat(400));
+  assert.ok(title.length <= TITLE_MAX, `got ${title.length}`);
+  assert.ok(title.endsWith("…"));
 });
