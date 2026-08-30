@@ -17,6 +17,17 @@ export interface Config {
   project_first_interval_days: number;
   child_retirement_streak: number;
   fsrs: { request_retention: number };
+  /**
+   * Valid `domain` values for create_item. A note created with one is routed to
+   * `<note_folder>/Concepts/<domain>/`. Empty disables domain routing entirely.
+   */
+  concept_domains: string[];
+  /**
+   * Folders that must not receive notes directly — the track roots. Writing to
+   * one is rejected with a message naming the Concepts/<domain> convention, so
+   * the routing survives a skill that has drifted.
+   */
+  protected_note_folders: string[];
 }
 
 let cached: Config | null = null;
@@ -61,6 +72,8 @@ export function loadConfig(path: string = CONFIG_PATH): Config {
     project_first_interval_days: c.project_first_interval_days ?? 21,
     child_retirement_streak: c.child_retirement_streak ?? 2,
     fsrs: c.fsrs ?? { request_retention: 0.9 },
+    concept_domains: c.concept_domains ?? [],
+    protected_note_folders: c.protected_note_folders ?? [],
   };
   if (path === CONFIG_PATH) cached = config;
   return config;
