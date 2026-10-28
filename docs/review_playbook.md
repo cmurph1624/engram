@@ -87,7 +87,7 @@ This is where building becomes learning.
   concept is no longer worth carrying (retires its children too).
 - `delete_item` is the sharper tool: it destroys the item, its rubric, its review history and
   its children, permanently. Reach for it only for junk — a test item, a card created by
-  mistake. Anything Chris actually studied should be retired, not deleted, so the history
+  mistake. Anything the user actually studied should be retired, not deleted, so the history
   survives. The concept note is not deleted — its frontmatter is flipped to `srs: false`, so
   the writing stays in the vault as an ordinary note and `scan_vault` will not bring the card
   back.
