@@ -124,8 +124,8 @@ export async function loadCards(vaultPath: string, client?: pg.Pool): Promise<Ca
     else byItem.set(p.item_id, [p]);
   }
 
-  // The vault copy on this host is known to be incomplete — a note named in the
-  // DB may simply not be here. That is a null compression, not an error.
+  // A note named in the DB may be missing from the vault (deleted, moved, or not
+  // yet synced). That is a null compression, not an error.
   const compressionCache = new Map<string, string | null>();
   const compressionFor = (relPath: string | null): string | null => {
     if (!relPath) return null;
