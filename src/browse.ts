@@ -4,7 +4,7 @@
  * This is the one place in the codebase that deliberately surfaces a note's
  * `## Compression` — the human's own written encoding. `parseNote()` keeps it
  * hidden on purpose (it must never reach a review prompt or an MCP tool
- * result); here Chris is reading his own cards on purpose, and the compression
+ * result); here the user is reading their own cards on purpose, and the compression
  * is the relearning path the playbook points at on a fumble.
  *
  * Nothing in this module writes: no DB mutation, no vault I/O beyond reads,

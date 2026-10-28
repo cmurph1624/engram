@@ -1,138 +1,113 @@
 # Engram
 
-Consolidation & recall MCP server (SRS V2). The deterministic core: item registry, FSRS scheduling, vault note read/write. See `CONTEXT.md` for the full picture.
+A consolidation and recall system, built as a Model Context Protocol (MCP) server. It turns
+project work and study into knowledge you can still explain months later: Claude runs a short
+daily review where you answer prompts cold, grades your answer against a rubric, and Engram
+schedules the next review with FSRS.
+
+This repo is the **deterministic core**: item registry, FSRS scheduling, split and retirement
+mechanics, and Obsidian vault note read/write. All the judgment (grading, drafting rubrics,
+follow-up questions) happens in the Claude conversation. The server makes **zero LLM calls** and
+needs no API key.
+
+## Why it's built this way
+
+- **Cold retrieval is the point.** `get_review_queue` never returns answers, rubrics, traps or
+  follow-ups, so nothing can leak into the conversation before you have answered.
+  `reveal_item` is called only afterwards.
+- **No queue debt.** There is no "cards due today" count, only a priority order that a fixed
+  time box (15 minutes by default) pulls from. Missing a day costs nothing; overdue items just
+  rank higher.
+- **FSRS, not SM-2.** FSRS handles late reviews natively, which the floating queue depends on.
+- **Misses split.** The FSRS rating comes from the worst rubric point, and a missed point
+  spawns a fast-clock child item that retires itself after two consecutive good reviews.
+- **The vault owns content; Postgres owns scheduling.** Concept notes are human-written
+  markdown in Obsidian. Scheduling state lives only in the database, so syncing the vault can
+  never corrupt it.
+- **The server never writes your explanations.** Writing the compression is where the learning
+  happens, so that stays with you.
+
+## Architecture
+
+```
+Claude Desktop / Cowork
+        │  Streamable HTTP + bearer token (private network, e.g. Tailscale)
+        ▼
+  Engram (Express + MCP SDK, :3456)  ── reads/writes ──►  Obsidian vault (concept notes)
+        │
+        ▼
+  PostgreSQL: items · rubric_points · reviews · point_scores
+```
+
+TypeScript on Node 20+, `@modelcontextprotocol/sdk`, `ts-fsrs`, `pg`, `gray-matter`. Every
+multi-statement write runs in a transaction, so a killed `record_review` leaves the database
+consistent.
+
+## MCP tools
+
+| Tool | Purpose |
+|---|---|
+| `get_review_queue` | Priority-ordered, time-boxed queue of prompts. Never includes answers. |
+| `reveal_item` | The full item (rubric points, answer, trap, follow-up), after you've answered. |
+| `record_review` | Derive the FSRS rating from per-point scores, schedule, record, and run splits/retirement in one transaction. |
+| `create_item` | Write a new concept note to the vault and register the item and its rubric. |
+| `update_item` | Edit item fields (mainly to refine auto-generated child prompts). |
+| `retire_item` | Take an item out of circulation, reversibly; history is kept. |
+| `delete_item` | Permanently delete an item and its history. Its note is kept, flagged `srs: false`. |
+| `list_items` | Filterable summaries with due dates and lapse counts. |
+| `get_stats` | Active count, recent reviews, weakest items, upcoming, open splits. |
+| `scan_vault` | Register hand-written `srs: true` notes and reconcile existing ones. |
+
+The conversation side is documented in [docs/review_playbook.md](docs/review_playbook.md): the
+daily review flow and the end-of-session checkpoint that captures new concepts as items.
+
+## HTTP routes
+
+| Route | Auth | Purpose |
+|---|---|---|
+| `POST /mcp` | `Authorization: Bearer <token>` | MCP transport |
+| `GET /health` | none | Liveness, item count, DB status |
+| `GET /browse` | bearer, `?token=`, or cookie | Read-only card browser |
+| `GET /api/cards` | same as `/browse` | Every item at full text, as JSON |
+| `DELETE /api/cards/:id` | same as `/browse` | Hard-delete one card |
+
+`/browse` is for flipping through your cards at full text, including each note's
+`## Compression`. A browser can't set an `Authorization` header on a plain navigation, so
+`?token=` is accepted once, swapped for an HttpOnly cookie, and redirected to a clean URL. That
+cookie never unlocks `/mcp`.
 
 ## Setup
 
-Commands below are PowerShell, for the Windows host this runs on (`STIGMERGYLABS`).
+Requirements: Node 20+, PostgreSQL (tested on 17), an Obsidian vault (or any folder of markdown notes).
 
-### 1. Databases
+```bash
+createdb engram
+createdb engram_test             # only needed for the integration tests
 
-```powershell
-createdb -h 127.0.0.1 -U claudedev engram
-createdb -h 127.0.0.1 -U claudedev engram_test    # used by integration tests
-```
+cp config.example.json config.json
+chmod 600 config.json
+openssl rand -hex 32             # paste as auth_token
+# then set vault_path, database_url and test_database_url
 
-Windows PostgreSQL has no Unix socket, so the Ubuntu setup's peer auth is unavailable: both
-databases are owned by the `claudedev` **role** and reached over TCP with a password. The
-password is read from `%APPDATA%\postgresql\pgpass.conf`, so these commands do not prompt —
-but that path is per-user, so anything running as another account must be given `PGPASSWORD`
-explicitly. The server applies schema migrations automatically on boot.
-
-### 2. Config
-
-```powershell
-Copy-Item config.example.json config.json
-
-# generate an auth_token (openssl is not on PATH here)
-$b = New-Object byte[] 32
-[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
--join ($b | ForEach-Object { $_.ToString('x2') })
-
-# restrict to the owner — the NTFS equivalent of chmod 600
-icacls config.json /inheritance:r /grant:r "$($env:USERNAME):(R,W)"
-```
-
-Then edit `config.json` and set `auth_token`, `database_url`, `test_database_url`, and
-`vault_path` (see the table in `CONTEXT.md`).
-
-> ⚠️ Edit it in an **editor**, not with `Set-Content` or `Out-File` — both write a UTF-8 BOM,
-> which `JSON.parse` rejects with a `SyntaxError` that points nowhere useful. If you must write
-> it from a script, use
-> `[IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))`.
-
-### 3. Install & build
-
-```powershell
 npm install
-npm run build      # tsc -> dist/
+npm run build                    # tsc -> dist/
+npm start                        # migrations apply on boot
+curl http://localhost:3456/health
 ```
 
-## Run
+Configuration keys are described in [CONTEXT.md](CONTEXT.md#configuration-configjson-gitignored).
+To connect Claude Desktop, see [docs/claude_desktop_config.md](docs/claude_desktop_config.md).
 
-```powershell
-npm start          # node dist/server.js
+Engram has no built-in backup. If your review history matters, schedule a `pg_dump`.
+
+## Tests
+
+```bash
+npm test             # unit + integration (node:test via tsx); needs engram_test
+npm run test:unit    # pure logic only, no database
 ```
 
-In production it runs under pm2 as the app `engram`, declared in
-`Documents\dev\server-config\ecosystem.config.js` — so it is started from there, not with an
-ad-hoc `pm2 start`:
+## More
 
-```powershell
-# elevated PowerShell: the daemon lives in session 0, and an ordinary shell
-# fails with EPERM \\.\pipe\rpc.sock
-& "C:\Program Files\nodejs\node.exe" `
-  "C:\Users\rdpuser\AppData\Roaming\npm\node_modules\pm2\bin\pm2" `
-  start "C:\Users\rdpuser\Documents\dev\server-config\ecosystem.config.js" --only engram
-```
-
-Call node against the pm2 entry point rather than `pm2.cmd`; the npm shim falls back to a bare
-`node` lookup that fails in an elevated shell. Run `pm2 save` after any change, since
-`dump.pm2` is what the boot-time `pm2 resurrect` task replays.
-
-## Test
-
-```powershell
-npm test           # all unit + integration tests (node:test via tsx)
-npm run test:unit  # pure-logic units only (no DB required)
-```
-
-Integration tests require the `engram_test` database to exist.
-
-## Health check
-
-```powershell
-(Invoke-WebRequest http://localhost:3456/health -UseBasicParsing).Content
-# { "ok": true, "items": N, "db": "connected" }
-```
-
-`curl` on Windows is an alias for `Invoke-WebRequest` and rejects curl's flags. From the Mac,
-real `curl` against the tailnet address works — see `docs/claude_desktop_config.md`.
-
-The `/mcp` endpoint requires `Authorization: Bearer <auth_token>`; `/health` does not.
-
-## Browsing the cards
-
-`GET /browse` is a read-only viewer for flipping through every item at full text — prompt,
-answer, rubric points (with their split/retired status), trap, follow-up, the note's
-`## Compression`, and the FSRS numbers. It writes nothing: no DB mutation, no vault write, no
-review recorded. It is for reading your own cards, not a substitute for the cold-recall review
-session in `docs/review_playbook.md`.
-
-From the Mac, over the tailnet:
-
-```
-http://100.88.70.118:3456/browse?token=<auth_token>
-```
-
-A browser cannot set an `Authorization` header on a plain navigation, so `?token=` is accepted
-once; the server stores it in an HttpOnly cookie and redirects to a clean `/browse`, keeping the
-token out of the URL bar and history. The cookie is good for 30 days and unlocks only `/browse`
-and `/api/cards` — `/mcp` still demands the bearer header.
-
-Keys: `←`/`→` (or `j`/`k`, or space) to flip, `/` to search, `Home`/`End` to jump. The type and
-status selectors filter the list; the default view is active items, due soonest first.
-
-`GET /api/cards` returns the same data as JSON (`{ count, cards[] }`) if you want to script
-against it.
-
-### Deleting a card
-
-Each card has a **Delete** button, behind a second confirm because the delete is permanent and
-this host has no scheduled backup. It removes the item, its rubric points, its review history
-and any split children. The same thing is available to Claude as the `delete_item` MCP tool,
-and over HTTP as `DELETE /api/cards/:id`.
-
-To take a card out of circulation *without* destroying it, use `retire_item` instead — the row
-and its history survive.
-
-**The card's concept note is handled for you.** Deleting flips the note's frontmatter to
-`srs: false` and leaves the file where it is — your compression survives as an ordinary
-Obsidian note, it just stops being a card. This is not cosmetic: `scan_vault` re-registers any
-`srs: true` note whose `srs_id` is missing from the DB, so deleting the row alone would be
-undone by the next scan, minus the review history. Engram never deletes a vault file, so the
-only thing Syncthing carries to the Mac is the one-line frontmatter change.
-
-## Connecting from the Mac
-
-See `docs/claude_desktop_config.md` for the `mcpServers` snippet, and `docs/review_playbook.md` for the daily-review and session-checkpoint conversation flows.
+[CONTEXT.md](CONTEXT.md) covers the design in depth: deletion ordering and why a delete flips
+the note before touching rows, the split/retirement rules, and the full configuration table.
