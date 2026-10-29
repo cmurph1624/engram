@@ -1,0 +1,37 @@
+# Engram as a container. Postgres is NOT defined here: the app joins an existing Docker network
+# where a Postgres service is reachable as `db` (for example another compose project's default
+# network), so several apps can share one database server.
+#
+# Machine-specific paths and the network name come from `.env` (gitignored; copy .env.example).
+#
+# compose can't express depends_on/healthcheck against another project, so on a cold boot
+# engram may start before Postgres is ready. server.ts exits 1 when it can't migrate, and
+# `restart: unless-stopped` retries until the db answers.
+#
+# config.json (auth_token + db password) is bind-mounted read-only rather than baked into the
+# image; src/config.ts reads it from the repo root, one level above dist/.
+
+services:
+  engram:
+    build: .
+    volumes:
+      # rw: scan_vault stamps srs_id and create_item writes new concept notes.
+      - ${ENGRAM_VAULT_DIR:?set ENGRAM_VAULT_DIR in .env}:/vault
+      - ${ENGRAM_CONFIG:?set ENGRAM_CONFIG in .env}:/app/config.json:ro
+    ports:
+      # Published on all interfaces for clients on a private network (e.g. Tailscale).
+      # Keep the host firewalled from the internet; /mcp also requires the bearer token.
+      - "3456:3456"
+    healthcheck:
+      # node:22-slim has no curl, so probe /health with node.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3456/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${ENGRAM_DB_NETWORK:?set ENGRAM_DB_NETWORK in .env}
+    external: true
