@@ -95,6 +95,19 @@ npm start                        # migrations apply on boot
 curl http://localhost:3456/health
 ```
 
+### With Docker
+
+The image builds the TypeScript in-image and runs `node dist/server.js`. Postgres is not part of
+the compose file: Engram joins an existing Docker network where a Postgres service answers as
+`db`, so it can share a database server with other apps.
+
+```bash
+cp .env.example .env          # vault dir, config.json path, and the Postgres network name
+# in config.json: vault_path = /vault, database_url = postgresql://<user>:<password>@db:5432/engram
+docker compose up -d --build --wait
+curl http://localhost:3456/health
+```
+
 Configuration keys are described in [CONTEXT.md](CONTEXT.md#configuration-configjson-gitignored).
 To connect Claude Desktop, see [docs/claude_desktop_config.md](docs/claude_desktop_config.md).
 
