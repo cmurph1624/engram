@@ -14,6 +14,8 @@
 services:
   engram:
     build: .
+    # Write vault files as the host vault owner, not root (config.json must be readable by it).
+    user: "${ENGRAM_UID:-1000}:${ENGRAM_GID:-1000}"
     volumes:
       # rw: scan_vault stamps srs_id and create_item writes new concept notes.
       - ${ENGRAM_VAULT_DIR:?set ENGRAM_VAULT_DIR in .env}:/vault
